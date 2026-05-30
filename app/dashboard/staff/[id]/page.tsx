@@ -5,6 +5,160 @@ import { createClient } from '@/lib/supabase'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 
+function LeaveTab({ staffId, staffStartDate, supabase, annualLeaveEligible, annualLeaveMethod }: {
+  staffId: string, staffStartDate: string, supabase: any, annualLeaveEligible: boolean, annualLeaveMethod: string
+}) {
+  const [leaves, setLeaves] = useState<any[]>([])
+  const [showForm, setShowForm] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [form, setForm] = useState({ leave_type: '', from_date: '', to_date: '', reason: '', document_status: 'pending' })
+
+  const leaveTypes = ['Sick Leave', 'Family Responsibility Leave (FRL)', 'Annual Leave', 'Unauthorized / No Notice Absence', 'Maternity Leave', 'Paternity Leave', 'Special Leave']
+
+  const leaveTypeColors: any = {
+    'Sick Leave': 'bg-red-100 text-red-700',
+    'Family Responsibility Leave (FRL)': 'bg-orange-100 text-orange-700',
+    'Annual Leave': 'bg-blue-100 text-blue-700',
+    'Unauthorized / No Notice Absence': 'bg-gray-100 text-gray-700',
+    'Maternity Leave': 'bg-pink-100 text-pink-700',
+    'Paternity Leave': 'bg-purple-100 text-purple-700',
+    'Special Leave': 'bg-green-100 text-green-700',
+  }
+
+  useEffect(() => { fetchLeaves() }, [staffId])
+
+  const fetchLeaves = async () => {
+    const { data } = await supabase.from('staff_leave_records').select('*').eq('staff_id', staffId).order('from_date', { ascending: false })
+    setLeaves(data || [])
+  }
+
+  const calculateWorkingDays = (from: string, to: string) => {
+    let count = 0
+    const current = new Date(from)
+    const end = new Date(to)
+    while (current <= end) {
+      const day = current.getDay()
+      if (day !== 0 && day !== 6) count++
+      current.setDate(current.getDate() + 1)
+    }
+    return count
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    const workingDays = calculateWorkingDays(form.from_date, form.to_date)
+    await supabase.from('staff_leave_records').insert({ staff_id: staffId, leave_type: form.leave_type, from_date: form.from_date, to_date: form.to_date, working_days: workingDays, reason: form.reason, document_status: form.document_status })
+    await fetchLeaves()
+    setForm({ leave_type: '', from_date: '', to_date: '', reason: '', document_status: 'pending' })
+    setShowForm(false)
+    setLoading(false)
+  }
+
+  const sickLeaveUsed = leaves.filter(l => l.leave_type === 'Sick Leave').reduce((acc, l) => acc + (l.working_days || 0), 0)
+  const frlUsed = leaves.filter(l => l.leave_type === 'Family Responsibility Leave (FRL)').reduce((acc, l) => acc + (l.working_days || 0), 0)
+  const annualLeaveUsed = leaves.filter(l => l.leave_type === 'Annual Leave').reduce((acc, l) => acc + (l.working_days || 0), 0)
+  const unauthorizedUsed = leaves.filter(l => l.leave_type === 'Unauthorized / No Notice Absence').reduce((acc, l) => acc + (l.working_days || 0), 0)
+
+  const annualLeaveLabel = !annualLeaveEligible ? 'İzin hakkı yok' : annualLeaveMethod === 'fixed' ? 'Sabit izin' : annualLeaveMethod === 'accrual' ? '17 iş günü = 1 gün' : 'Yöntem belirsiz'
+
+  return (
+    <div>
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="bg-red-50 rounded-lg p-4">
+          <p className="text-xs text-red-500 font-medium">Sick Leave</p>
+          <p className="text-2xl font-bold text-red-700 mt-1">{sickLeaveUsed}</p>
+          <p className="text-xs text-red-400">/ 30 gün (36 ay)</p>
+        </div>
+        <div className="bg-orange-50 rounded-lg p-4">
+          <p className="text-xs text-orange-500 font-medium">FRL</p>
+          <p className="text-2xl font-bold text-orange-700 mt-1">{frlUsed}</p>
+          <p className="text-xs text-orange-400">/ 3 gün (yıllık)</p>
+        </div>
+        <div className="bg-blue-50 rounded-lg p-4">
+          <p className="text-xs text-blue-500 font-medium">Annual Leave</p>
+          <p className="text-2xl font-bold text-blue-700 mt-1">{annualLeaveEligible ? annualLeaveUsed : '—'}</p>
+          <p className="text-xs text-blue-400">{annualLeaveLabel}</p>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-4">
+          <p className="text-xs text-gray-500 font-medium">Unauthorized</p>
+          <p className="text-2xl font-bold text-gray-700 mt-1">{unauthorizedUsed}</p>
+          <p className="text-xs text-gray-400">gün</p>
+        </div>
+      </div>
+
+      <div className="flex justify-end mb-4">
+        <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition">+ İzin Ekle</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-gray-50 rounded-lg p-6 mb-6 space-y-4">
+          <h4 className="font-medium text-gray-700">Yeni İzin Kaydı</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">İzin Türü *</label>
+              <select value={form.leave_type} onChange={(e) => setForm({...form, leave_type: e.target.value})} required className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Seçin</option>
+                {leaveTypes.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Belge Durumu</label>
+              <select value={form.document_status} onChange={(e) => setForm({...form, document_status: e.target.value})} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="pending">Belge Bekleniyor</option>
+                <option value="received">Belge Alındı</option>
+                <option value="not_required">Belge Gerekmez</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Başlangıç Tarihi *</label>
+              <input type="date" value={form.from_date} onChange={(e) => setForm({...form, from_date: e.target.value})} required className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Bitiş Tarihi *</label>
+              <input type="date" value={form.to_date} onChange={(e) => setForm({...form, to_date: e.target.value})} required className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            {form.from_date && form.to_date && (
+              <div className="col-span-2">
+                <p className="text-sm text-blue-600 font-medium">İş günü: {calculateWorkingDays(form.from_date, form.to_date)} gün</p>
+              </div>
+            )}
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Not</label>
+              <input value={form.reason} onChange={(e) => setForm({...form, reason: e.target.value})} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button type="submit" disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition disabled:opacity-50">{loading ? 'Kaydediliyor...' : 'Kaydet'}</button>
+            <button type="button" onClick={() => setShowForm(false)} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-300 transition">İptal</button>
+          </div>
+        </form>
+      )}
+
+      {leaves.length === 0 ? (
+        <div className="text-center py-12"><p className="text-gray-400">Henüz izin kaydı yok.</p></div>
+      ) : (
+        <div className="space-y-3">
+          {leaves.map((leave) => (
+            <div key={leave.id} className="border border-gray-200 rounded-lg p-4">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${leaveTypeColors[leave.leave_type] || 'bg-gray-100 text-gray-600'}`}>{leave.leave_type}</span>
+                  <p className="text-sm text-gray-700 mt-2">{leave.from_date} → {leave.to_date}<span className="ml-2 text-gray-500">({leave.working_days} iş günü)</span></p>
+                  {leave.reason && <p className="text-xs text-gray-400 mt-1">{leave.reason}</p>}
+                </div>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${leave.document_status === 'received' ? 'bg-green-100 text-green-700' : leave.document_status === 'not_required' ? 'bg-gray-100 text-gray-500' : 'bg-yellow-100 text-yellow-700'}`}>
+                  {leave.document_status === 'received' ? 'Belge Alındı' : leave.document_status === 'not_required' ? 'Belge Gerekmez' : 'Belge Bekleniyor'}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DocumentsTab({ staffId, supabase }: { staffId: string, supabase: any }) {
   const [documents, setDocuments] = useState<any[]>([])
   const [uploading, setUploading] = useState<string | null>(null)
@@ -179,9 +333,7 @@ export default function StaffProfilePage() {
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[staff.employment_status] || 'bg-gray-100 text-gray-600'}`}>
                 {staff.employment_status}
               </span>
-              <Link href={`/dashboard/staff/${staff.id}/edit`} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition">
-                Düzenle
-              </Link>
+              <Link href={`/dashboard/staff/${staff.id}/edit`} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Düzenle</Link>
             </div>
           </div>
         </div>
@@ -272,7 +424,13 @@ export default function StaffProfilePage() {
             )}
 
             {activeTab === 'leave' && (
-              <div><p className="text-gray-400 text-center py-12">İzin modülü yakında eklenecek.</p></div>
+              <LeaveTab
+                staffId={params.id as string}
+                staffStartDate={staff.contract_start_date}
+                supabase={supabase}
+                annualLeaveEligible={staff.annual_leave_eligible}
+                annualLeaveMethod={staff.annual_leave_method || ''}
+              />
             )}
 
             {activeTab === 'history' && (
