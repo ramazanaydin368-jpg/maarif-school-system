@@ -126,7 +126,11 @@ export default function StaffPage() {
                         {s.employment_status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-blue-600 hover:underline cursor-pointer">Görüntüle</td>
+                    <td className="px-6 py-4 text-sm">
+                      <Link href={`/dashboard/staff/${s.id}`} className="text-blue-600 hover:underline">
+                        Görüntüle
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
